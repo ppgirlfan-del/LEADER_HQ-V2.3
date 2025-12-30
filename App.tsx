@@ -30,7 +30,7 @@ export default function App() {
   useEffect(() => {
     const checkConfig = () => {
       const hasEnv = !!(typeof process !== 'undefined' && process.env?.APPS_SCRIPT_URL);
-      const hasSession = !!window.sessionStorage.getItem('OVERRIDE_APPS_SCRIPT_URL');
+      const hasSession = !!window.sessionStorage.getItem('OVER_APPS_SCRIPT_URL');
       setIsConfigured(hasEnv || hasSession);
     };
     checkConfig();
@@ -40,7 +40,7 @@ export default function App() {
 
   const saveConfig = () => {
     if (tempUrlInput.startsWith('https://script.google.com')) {
-      window.sessionStorage.setItem('OVERRIDE_APPS_SCRIPT_URL', tempUrlInput);
+      window.sessionStorage.setItem('OVER_APPS_SCRIPT_URL', tempUrlInput);
       setShowConfigModal(false);
       alert('連線設定已儲存！');
     } else {
@@ -70,8 +70,6 @@ export default function App() {
   const [selectedCard, setSelectedCard] = useState<FinderResult | null>(null);
   const [showHqModal, setShowHqModal] = useState(false);
   const [hqCardId, setHqCardId] = useState<string>('');
-  
-  // 審核勾選狀態
   const [hqChecks, setHqChecks] = useState<Record<string, boolean>>({});
 
   // 查詢
@@ -84,16 +82,13 @@ export default function App() {
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResults, setAuditResults] = useState<AuditItem[]>([]);
 
+  // 當開啟 HQ Modal 時初始化勾選
   useEffect(() => {
     if (showHqModal) {
       if (creatorTool === 'LESSON_PLAN') {
-        setHqChecks({
-          A2: true, A5: true, E1: true, E5: true
-        });
+        setHqChecks({ A2: true, A5: true, E1: true, E5: true });
       } else {
-        setHqChecks({
-          R01: false, R02: false, R03: false, R04: false, R05: false, R06: false, R07: false, R08: false
-        });
+        setHqChecks({ R01: false, R02: false, R03: false, R04: false, R05: false, R06: false, R07: false, R08: false });
       }
     }
   }, [showHqModal, creatorTool]);
@@ -103,12 +98,7 @@ export default function App() {
     const mustPass = ["A2", "A5", "E1", "E5"].every(code => hqChecks[code]);
     if (!mustPass) return false;
     const groups = Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>;
-    const allGroupsPassed = groups.every(gKey => {
-      const codes = LESSON_HQ_GROUPS[gKey].codes;
-      const checkedCount = codes.filter(c => hqChecks[c]).length;
-      return checkedCount >= 3;
-    });
-    return allGroupsPassed;
+    return groups.every(gKey => LESSON_HQ_GROUPS[gKey].codes.filter(c => hqChecks[c]).length >= 3);
   }, [hqChecks, creatorTool]);
 
   const isKnowledgeCardHqPassed = useMemo(() => {
@@ -133,17 +123,13 @@ export default function App() {
     try {
       const resp = await queryCards({
         source: (creatorTool === 'LESSON_PLAN' || activeTab === 'creator') ? '教案' : '主題知識卡',
-        brand: selectedBrand,
-        domain: selectedDomain,
-        input: searchQuery
+        brand: selectedBrand, domain: selectedDomain, input: searchQuery
       });
       setSheetResults(resp.results);
     } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
 
-  useEffect(() => {
-    if (isConfigured) handleFinderSearch();
-  }, [selectedBrand, selectedDomain, isConfigured]);
+  useEffect(() => { if (isConfigured) handleFinderSearch(); }, [selectedBrand, selectedDomain, isConfigured]);
 
   const updateLocalCard = (id: string, cardData: Partial<FinderResult>) => {
     setLocalCards(prev => {
@@ -157,9 +143,7 @@ export default function App() {
       if (fromCloud) return [{ ...fromCloud, ...cardData }, ...prev];
       return prev;
     });
-    if (selectedCard?.id === id) {
-      setSelectedCard(prev => prev ? ({ ...prev, ...cardData }) : null);
-    }
+    if (selectedCard?.id === id) { setSelectedCard(prev => prev ? ({ ...prev, ...cardData }) : null); }
   };
 
   const handleGenerate = async () => {
@@ -178,15 +162,9 @@ export default function App() {
       const tempId = `${brandCode}-${Math.floor(Math.random() * 900000 + 100000)}`;
       setCurrentId(tempId);
       const newCard: FinderResult = {
-        id: tempId,
-        topic_name: topicNameInput,
-        brand: selectedBrand,
-        domain: selectedDomain,
-        content: res.content,
-        summary: res.summary || "",
-        keywords: res.keywords || [],
-        meta_json: res.meta_json,
-        status: '草稿'
+        id: tempId, topic_name: topicNameInput, brand: selectedBrand, domain: selectedDomain,
+        content: res.content, summary: res.summary || "", keywords: res.keywords || [],
+        meta_json: res.meta_json, status: '草稿'
       };
       setLocalCards(prev => [newCard, ...prev]);
     } catch (e) { alert('產生失敗。'); } finally { setIsLoading(false); }
@@ -197,12 +175,9 @@ export default function App() {
     if (!card || !card.content) return;
     setIsAuditing(true);
     try {
-      let results;
-      if (creatorTool === 'LESSON_PLAN') {
-        results = await performLessonAudit(card.content, card.meta_json || '');
-      } else {
-        results = await performAiAudit(card.content, selectedBrand, selectedDomain);
-      }
+      let results = creatorTool === 'LESSON_PLAN' 
+        ? await performLessonAudit(card.content, card.meta_json || '')
+        : await performAiAudit(card.content, selectedBrand, selectedDomain);
       setAuditResults(results);
     } catch (e) { alert('審核失敗'); } finally { setIsAuditing(false); }
   };
@@ -212,45 +187,36 @@ export default function App() {
     if (!card) return;
     if (isEditingGenerated) {
       updateLocalCard(currentId, { 
-        topic_name: editFields.topic_name,
-        summary: editFields.summary,
+        topic_name: editFields.topic_name, summary: editFields.summary,
         keywords: editFields.keywords.split(',').map(k => k.trim()).filter(k => k),
-        content: editFields.content,
-        meta_json: editFields.meta_json
+        content: editFields.content, meta_json: editFields.meta_json
       });
       setIsEditingGenerated(false);
     } else {
       setEditFields({
-        topic_name: card.topic_name,
-        summary: card.summary || "",
+        topic_name: card.topic_name, summary: card.summary || "",
         keywords: Array.isArray(card.keywords) ? card.keywords.join(', ') : (card.keywords || ""),
-        content: card.content || '',
-        meta_json: card.meta_json || ''
+        content: card.content || '', meta_json: card.meta_json || ''
       });
       setIsEditingGenerated(true);
     }
   };
 
   const finalizeHqReview = async () => {
-    const card = localCards.find(c => c.id === (hqCardId || currentId));
-    if (!card) return;
+    const cardId = hqCardId || currentId;
+    const card = localCards.find(c => c.id === cardId);
+    if (!card) { alert('找不到對應資料'); return; }
     setIsSavingToSheet(true);
     try {
-      // 根據模組決定寫入分頁與 metadata
       const tabName = creatorTool === 'LESSON_PLAN' ? '教案' : '主題知識卡';
-      const approvedBy = "HQ"; // 或從環境變數/登入資訊取得
-      const approvedAt = new Date().toISOString();
-
-      await appendCard({
-        ...card,
-        tab: tabName,
-        keywords: Array.isArray(card.keywords) ? card.keywords.join(', ') : card.keywords || "",
-        status: '已審定',
-        approved_by: approvedBy,
-        approved_at: approvedAt
+      const result = await appendCard({
+        ...card, tab: tabName, status: '已審定',
+        approved_by: "HQ-ASSISTANT-V2", approved_at: new Date().toISOString()
       });
-      updateLocalCard(card.id, { status: '已審定' });
-      alert(`✅ ${tabName} 審定完成！資料已同步至總部雲端。`);
+      if (result.result === "success") {
+        updateLocalCard(card.id, { status: '已審定' });
+        alert(`✅ ${tabName} 審定完成！資料已同步。`);
+      } else { throw new Error("發送失敗"); }
     } catch (e) { alert('❌ 儲存錯誤'); } finally {
       setIsSavingToSheet(false);
       setShowHqModal(false);
@@ -260,12 +226,12 @@ export default function App() {
   const currentCardForOutput = useMemo(() => localCards.find(c => c.id === currentId), [localCards, currentId]);
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
       
       {/* 詳情彈窗 */}
       {selectedCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedCard(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-black" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b bg-slate-50 flex flex-col gap-4">
               <div className="flex justify-between items-start">
                 <div>
@@ -277,7 +243,6 @@ export default function App() {
                 </div>
                 <button onClick={() => setSelectedCard(null)} className="text-slate-400 hover:text-slate-600 text-2xl">✕</button>
               </div>
-              
               <div className="flex flex-col gap-3">
                 {selectedCard.summary && (
                   <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs italic text-slate-600">
@@ -292,7 +257,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
               <div className="flex gap-2">
                 <button 
                   onClick={() => {
@@ -302,16 +266,16 @@ export default function App() {
                     setInputText(selectedCard.content || '');
                     setSelectedCard(null);
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20">🚀 生成教案</button>
-                <button disabled={selectedCard.status === '已審定'} onClick={() => { setHqCardId(selectedCard.id); setShowHqModal(true); }} className="px-4 py-2 border rounded-xl text-sm font-bold disabled:opacity-30">🛡️ 總部審核</button>
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg">🚀 生成教案</button>
+                <button disabled={selectedCard.status === '已審定'} onClick={() => { setHqCardId(selectedCard.id); setShowHqModal(true); }} className="px-4 py-2 border rounded-xl text-sm font-bold hover:bg-slate-50">🛡️ 總部審核</button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed whitespace-pre-wrap text-slate-900">
               {selectedCard.content}
               {selectedCard.meta_json && (
                 <div className="mt-10 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-1">Meta JSON (H 欄備份)</div>
-                  <div className="font-mono text-[11px] text-slate-500 break-all leading-normal">{selectedCard.meta_json}</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Meta JSON</div>
+                  <div className="font-mono text-[11px] text-slate-500 break-all">{selectedCard.meta_json}</div>
                 </div>
               )}
             </div>
@@ -325,71 +289,52 @@ export default function App() {
           <div className="text-xl font-bold">LEADER HQ <span className="text-blue-500">v2</span></div>
           <div className="text-[10px] opacity-40 uppercase tracking-widest font-bold">總部知識開發系統</div>
         </div>
-        
         <div className="flex flex-col gap-1">
-          <button onClick={() => setActiveTab('finder')} className={`text-left p-3 rounded-xl text-sm transition-all ${activeTab === 'finder' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>🔍 查卡助手</button>
+          <button onClick={() => setActiveTab('finder')} className={`text-left p-3 rounded-xl text-sm transition-all ${activeTab === 'finder' ? 'bg-blue-600 text-white font-bold shadow-lg' : 'text-slate-400 hover:bg-slate-800'}`}>🔍 查卡助手</button>
           <div className="mt-4 text-[10px] font-bold text-slate-500 mb-2 tracking-widest uppercase px-3">生卡模組</div>
           <button onClick={() => { setActiveTab('creator'); setCreatorTool('KNOWLEDGE_CARD'); }} className={`text-left p-3 rounded-xl text-sm transition-all ${activeTab === 'creator' && creatorTool === 'KNOWLEDGE_CARD' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>🧩 主題知識卡</button>
           <button onClick={() => { setActiveTab('creator'); setCreatorTool('LESSON_PLAN'); }} className={`text-left p-3 rounded-xl text-sm transition-all ${activeTab === 'creator' && creatorTool === 'LESSON_PLAN' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-800'}`}>📅 教案模板 (60/90)</button>
         </div>
-
-        <div className="mt-auto flex flex-col gap-3">
-          <div className="pt-6 border-t border-slate-800">
-            <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs mb-3 outline-none focus:ring-1 focus:ring-blue-500">
-              <option>YYS｜燿宇的游泳學校</option>
-              <option>LEADER 鐵人</option>
-            </select>
-            <select value={selectedDomain} onChange={(e) => setSelectedDomain(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500">
-              {DOMAINS.map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          
+        <div className="mt-auto pt-6 border-t border-slate-800 flex flex-col gap-3">
+          <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs outline-none">
+            <option>YYS｜燿宇的游泳學校</option>
+            <option>LEADER 鐵人</option>
+          </select>
+          <select value={selectedDomain} onChange={(e) => setSelectedDomain(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs outline-none">
+            {DOMAINS.map(d => <option key={d}>{d}</option>)}
+          </select>
           <button onClick={() => setShowConfigModal(true)} className={`flex items-center gap-3 w-full p-3 rounded-xl text-[10px] font-bold transition-all ${isConfigured ? 'bg-slate-800 text-green-400 border border-slate-700' : 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'}`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-red-400'}`}></div>
-            {isConfigured ? '總部雲端已連線' : '未連線 (請設定)'}
+            <div className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-green-400' : 'bg-red-400'}`}></div>
+            {isConfigured ? '雲端已連線' : '未連線 (請設定)'}
           </button>
         </div>
       </aside>
 
       <main className="flex-1 ml-[280px] p-10 overflow-y-auto min-h-screen">
         <header className="mb-10 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-slate-900">
-            {activeTab === 'finder' ? '查卡助手' : (creatorTool === 'KNOWLEDGE_CARD' ? '知識卡生成' : '教案生成')}
-          </h1>
+          <h1 className="text-3xl font-bold text-slate-900">{activeTab === 'finder' ? '查卡助手' : (creatorTool === 'KNOWLEDGE_CARD' ? '知識卡生成' : '教案生成')}</h1>
         </header>
 
         {activeTab === 'finder' ? (
           <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100">
             <div className="flex gap-4 mb-8">
-              <input 
-                type="text" 
-                placeholder="輸入關鍵字..." 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && handleFinderSearch()} 
-                className="flex-1 p-4 bg-slate-100 rounded-2xl text-sm outline-none border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
-              />
+              <input type="text" placeholder="搜尋主題名稱或 ID..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleFinderSearch()} className="flex-1 p-4 bg-slate-100 rounded-2xl text-sm outline-none border-2 border-transparent focus:border-blue-500 transition-all" />
               <button onClick={handleFinderSearch} className="px-8 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-colors">搜尋</button>
             </div>
             <div className="overflow-hidden rounded-xl border border-slate-50">
               <table className="w-full text-left text-sm border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
-                    <th className="py-4 px-6">ID</th>
-                    <th className="py-4 px-6">主題名稱</th>
-                    <th className="py-4 px-6">狀態</th>
-                  </tr>
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                  <tr><th className="py-4 px-6">ID</th><th className="py-4 px-6">主題名稱</th><th className="py-4 px-6">狀態</th></tr>
                 </thead>
                 <tbody className="text-slate-900">
                   {displayResults.map(res => (
                     <tr key={res.id} onClick={() => setSelectedCard(res)} className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors group">
                       <td className="py-5 px-6 font-mono text-blue-600 font-bold">{res.id}</td>
-                      <td className="py-5 px-6 font-bold text-slate-900 group-hover:text-blue-700 transition-colors">{res.topic_name}</td>
-                      <td className="py-5 px-6">
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${res.status === '已審定' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{res.status}</span>
-                      </td>
+                      <td className="py-5 px-6 font-bold group-hover:text-blue-700">{res.topic_name}</td>
+                      <td className="py-5 px-6"><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${res.status === '已審定' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{res.status}</span></td>
                     </tr>
                   ))}
+                  {displayResults.length === 0 && !isLoading && <tr><td colSpan={3} className="py-10 text-center text-slate-400 italic">無匹配資料</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -399,221 +344,129 @@ export default function App() {
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase px-1">主題名稱</label>
-                <input 
-                  type="text" 
-                  value={topicNameInput} 
-                  onChange={(e) => setTopicNameInput(e.target.value)} 
-                  className="p-4 bg-white border border-slate-200 rounded-2xl font-bold shadow-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900" 
-                  placeholder="例如：自由式基礎 - 漂浮..." 
-                />
+                <input type="text" value={topicNameInput} onChange={(e) => setTopicNameInput(e.target.value)} className="p-4 bg-white border border-slate-200 rounded-2xl font-bold shadow-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如：自由式基礎 - 漂浮..." />
               </div>
               <div className="flex-1 flex flex-col gap-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase px-1">原始素材內容</label>
-                <textarea 
-                  value={inputText} 
-                  onChange={(e) => setInputText(e.target.value)} 
-                  className="flex-1 p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm resize-none outline-none leading-relaxed focus:ring-2 focus:ring-blue-500 text-slate-900 font-medium" 
-                  placeholder="請貼上內容..." 
-                />
+                <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="flex-1 p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm resize-none outline-none leading-relaxed focus:ring-2 focus:ring-blue-500" placeholder="請貼上內容..." />
               </div>
-              <button onClick={handleGenerate} disabled={isLoading} className="py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 disabled:opacity-50 transition-all active:scale-[0.98]">
+              <button onClick={handleGenerate} disabled={isLoading} className="py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl disabled:opacity-50 transition-all active:scale-[0.98]">
                 {isLoading ? '🤖 AI 正在構思中...' : (creatorTool === 'LESSON_PLAN' ? '✨ 生成教案內容' : '✨ 整理為主題知識卡')}
               </button>
             </div>
-            
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full overflow-hidden">
                 {currentCardForOutput ? (
                     <div className="flex flex-col h-full">
                         <div className="mb-4 flex justify-between items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">生成結果預覽</span>
                           <div className="flex gap-2">
-                             <button onClick={handleAudit} disabled={isAuditing} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700 transition-colors">
-                               {isAuditing ? '⌛ 審核中...' : '📋 AI 自審'}
-                             </button>
-                             <button onClick={toggleEditMode} className={`px-4 py-1.5 border rounded-lg text-xs font-bold transition-colors ${isEditingGenerated ? 'bg-orange-500 text-white border-orange-500 shadow-lg shadow-orange-500/20' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                               {isEditingGenerated ? '💾 儲存修改' : '✎ 編輯'}
-                             </button>
-                             <button onClick={() => setShowHqModal(true)} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-lg shadow-green-500/20 hover:bg-green-700 transition-all">盾牌審核並儲存</button>
+                             <button onClick={handleAudit} disabled={isAuditing} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700 transition-colors">{isAuditing ? '⌛ 審核中...' : '📋 AI 自審'}</button>
+                             <button onClick={toggleEditMode} className={`px-4 py-1.5 border rounded-lg text-xs font-bold transition-colors ${isEditingGenerated ? 'bg-orange-500 text-white border-orange-500 shadow-lg shadow-orange-500/20' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{isEditingGenerated ? '💾 儲存修改' : '✎ 編輯'}</button>
+                             <button onClick={() => { setHqCardId(''); setShowHqModal(true); }} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-lg hover:bg-green-700 transition-all">🛡️ 總部審核儲存</button>
                           </div>
                         </div>
-                        
-                        <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed font-sans">
-                           
+                        <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed">
                            {isEditingGenerated ? (
                              <div className="flex flex-col gap-6">
                                <div className="grid grid-cols-1 gap-4">
-                                 <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block px-1">主題名稱</label>
-                                   <input 
-                                     type="text" 
-                                     value={editFields.topic_name} 
-                                     onChange={(e) => setEditFields({...editFields, topic_name: e.target.value})}
-                                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm focus:ring-1 focus:ring-blue-500 outline-none"
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block px-1">核心摘要</label>
-                                   <input 
-                                     type="text" 
-                                     value={editFields.summary} 
-                                     onChange={(e) => setEditFields({...editFields, summary: e.target.value})}
-                                     className="w-full p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-sm italic focus:ring-1 focus:ring-blue-500 outline-none"
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block px-1">關鍵字標籤 (逗號分隔)</label>
-                                   <input 
-                                     type="text" 
-                                     value={editFields.keywords} 
-                                     onChange={(e) => setEditFields({...editFields, keywords: e.target.value})}
-                                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:ring-1 focus:ring-blue-500 outline-none"
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block px-1 text-blue-600">Meta JSON (H 欄備份 - 重要)</label>
-                                   <input 
-                                     type="text" 
-                                     value={editFields.meta_json} 
-                                     onChange={(e) => setEditFields({...editFields, meta_json: e.target.value})}
-                                     className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-mono focus:ring-1 focus:ring-blue-600 outline-none"
-                                     placeholder='{"brand": "...", "domain": "...", ...}'
-                                   />
-                                 </div>
-                                 <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block px-1">正文內容</label>
-                                   <textarea 
-                                     value={editFields.content}
-                                     onChange={(e) => setEditFields({...editFields, content: e.target.value})}
-                                     className="w-full h-[450px] p-4 bg-white border border-slate-200 rounded-xl font-sans text-sm outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed"
-                                   />
-                                 </div>
+                                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">主題名稱</label><input type="text" value={editFields.topic_name} onChange={(e) => setEditFields({...editFields, topic_name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" /></div>
+                                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">核心摘要</label><input type="text" value={editFields.summary} onChange={(e) => setEditFields({...editFields, summary: e.target.value})} className="w-full p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-sm italic" /></div>
+                                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">關鍵字標籤</label><input type="text" value={editFields.keywords} onChange={(e) => setEditFields({...editFields, keywords: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs" /></div>
+                                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block text-blue-600">Meta JSON</label><input type="text" value={editFields.meta_json} onChange={(e) => setEditFields({...editFields, meta_json: e.target.value})} className="w-full p-3 bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-mono" /></div>
+                                 <div><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">正文內容</label><textarea value={editFields.content} onChange={(e) => setEditFields({...editFields, content: e.target.value})} className="w-full h-[450px] p-4 bg-white border border-slate-200 rounded-xl text-sm outline-none resize-none leading-relaxed" /></div>
                                </div>
                              </div>
                            ) : (
                              <>
                                <div className="mb-8 flex flex-col gap-4">
-                                  {currentCardForOutput.summary && (
-                                    <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-2xl relative shadow-sm">
-                                      <div className="absolute top-[-8px] left-4 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm">AI 核心摘要</div>
-                                      <p className="text-xs text-slate-600 leading-relaxed italic">"{currentCardForOutput.summary}"</p>
-                                    </div>
-                                  )}
-                                  {currentCardForOutput.keywords && currentCardForOutput.keywords.length > 0 && (
-                                    <div className="flex flex-wrap gap-2">
-                                      {currentCardForOutput.keywords.map(k => (
-                                        <span key={k} className="px-3 py-1 bg-slate-900 text-white rounded-full text-[10px] font-bold shadow-sm">#{k}</span>
-                                      ))}
-                                    </div>
-                                  )}
+                                  {currentCardForOutput.summary && (<div className="p-5 bg-blue-50/50 border border-blue-100 rounded-2xl relative shadow-sm"><div className="absolute top-[-8px] left-4 bg-blue-600 text-white text-[9px] font-bold px-2 py-0.5 rounded">AI 核心摘要</div><p className="text-xs text-slate-600 italic">"{currentCardForOutput.summary}"</p></div>)}
+                                  {currentCardForOutput.keywords && currentCardForOutput.keywords.length > 0 && (<div className="flex flex-wrap gap-2">{currentCardForOutput.keywords.map(k => (<span key={k} className="px-3 py-1 bg-slate-900 text-white rounded-full text-[10px] font-bold shadow-sm">#{k}</span>))}</div>)}
                                </div>
-
+                               
+                               {/* 恢復 AI 自審報告完整顯示 */}
                                {auditResults.length > 0 && (
-                                 <div className="mb-8 p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                                   <div className="text-[10px] font-bold text-blue-600 uppercase mb-3 tracking-widest flex justify-between items-center px-1">
+                                 <div className="mb-8 p-5 bg-blue-50/50 rounded-2xl border border-blue-100 shadow-sm">
+                                   <div className="text-[10px] font-bold text-blue-600 uppercase mb-4 tracking-widest flex justify-between items-center px-1">
                                      <span>AI 自審報告</span>
-                                     <button onClick={() => setAuditResults([])} className="text-blue-400 hover:text-blue-600">✕</button>
+                                     <button onClick={() => setAuditResults([])} className="text-blue-400 hover:text-blue-600 transition-colors">✕</button>
                                    </div>
-                                   <div className="flex flex-col gap-2">
+                                   <div className="flex flex-col gap-3">
                                      {auditResults.map((r, i) => (
-                                       <div key={i} className="text-xs flex items-start gap-2">
-                                         <span className={`px-1.5 py-0.5 rounded font-bold ${r.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                       <div key={i} className="text-xs flex items-start gap-3 p-2 rounded-xl bg-white/60 border border-white transition-all hover:shadow-md hover:scale-[1.01]">
+                                         <span className={`px-2 py-1 rounded-lg font-bold shrink-0 min-w-[50px] text-center shadow-sm ${r.status === 'pass' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
                                            {r.code} {r.status === 'pass' ? '✔' : '✘'}
                                          </span>
                                          <div className="flex-1">
-                                           <span className="font-bold text-slate-700">{r.name}</span>
-                                           <p className="text-slate-500 mt-0.5 italic">{r.reason}</p>
+                                           <div className={`font-bold ${r.status === 'pass' ? 'text-slate-800' : 'text-red-600'}`}>{r.name}</div>
+                                           {r.reason && (
+                                             <p className="text-slate-500 mt-1 leading-relaxed text-[10px] font-normal italic">
+                                               {r.reason}
+                                             </p>
+                                           )}
                                          </div>
                                        </div>
                                      ))}
                                    </div>
                                  </div>
                                )}
-                               
+
                                <div className="whitespace-pre-wrap">{currentCardForOutput.content}</div>
-                               
-                               {currentCardForOutput.meta_json && (
-                                 <div className="mt-10 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-1">Meta JSON (即將寫入 H 欄)</div>
-                                   <div className="font-mono text-[11px] text-slate-500 break-all leading-normal">{currentCardForOutput.meta_json}</div>
-                                 </div>
-                               )}
+                               {currentCardForOutput.meta_json && (<div className="mt-10 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200"><div className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-1">Meta JSON</div><div className="font-mono text-[11px] text-slate-500 break-all leading-normal">{currentCardForOutput.meta_json}</div></div>)}
                              </>
                            )}
                         </div>
                     </div>
                 ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-200 rounded-[2rem] bg-white/50">
-                        <div className="text-5xl mb-4 text-slate-200 opacity-50">🪄</div>
-                        <p className="text-sm font-medium">填寫左側資訊並點擊生成</p>
-                    </div>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-200 rounded-[2rem] bg-white/50"><div className="text-5xl mb-4 opacity-50">🪄</div><p className="text-sm font-medium">填寫左側資訊並點擊生成</p></div>
                 )}
             </div>
           </div>
         )}
 
-        {/* Modal 設定 */}
+        {/* 設定彈窗 */}
         {showConfigModal && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-black">
               <h3 className="text-xl font-bold mb-2 text-slate-900">⚙️ 連線設定</h3>
               <p className="text-sm text-slate-500 mb-6">請輸入 Google Apps Script 佈署網址以連線總部資料庫。</p>
-              <input 
-                type="text" 
-                placeholder="https://script.google.com/macros/s/..." 
-                className="w-full p-4 bg-slate-100 rounded-xl mb-6 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 font-mono"
-                value={tempUrlInput}
-                onChange={(e) => setTempUrlInput(e.target.value)}
-              />
+              <input type="text" placeholder="https://script.google.com/macros/s/..." className="w-full p-4 bg-slate-100 rounded-xl mb-6 text-sm font-mono" value={tempUrlInput} onChange={(e) => setTempUrlInput(e.target.value)} />
               <div className="flex gap-3">
-                <button onClick={() => setShowConfigModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold text-slate-600">取消</button>
+                <button onClick={() => setShowConfigModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">取消</button>
                 <button onClick={saveConfig} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">確認儲存</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* 總部審核彈窗 */}
+        {/* 總部審核面板 */}
         {showHqModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
-            <div className={`bg-white rounded-2xl shadow-2xl w-full ${creatorTool === 'LESSON_PLAN' ? 'max-w-4xl' : 'max-w-md'} p-6 text-black flex flex-col max-h-[90vh]`}>
+            <div className={`bg-white rounded-2xl shadow-2xl w-full ${creatorTool === 'LESSON_PLAN' ? 'max-w-4xl' : 'max-w-md'} p-6 flex flex-col max-h-[90vh]`}>
               <div className="mb-4">
                 <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">🛡️ 總部審核面板 {creatorTool === 'LESSON_PLAN' && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">教案模組</span>}</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  {creatorTool === 'LESSON_PLAN' ? '符合「硬門檻」且各組勾選 3 項以上方可核准發布。' : '請勾選確認符合規範。所有條件滿足後方可核准發布。'}
-                </p>
+                <p className="text-xs text-slate-500 mt-1">{creatorTool === 'LESSON_PLAN' ? '符合「硬門檻」且各組勾選 3 項以上方可核准發布。' : '請勾選確認符合規範。'}</p>
               </div>
-
               <div className="flex-1 overflow-y-auto pr-2">
                 {creatorTool === 'LESSON_PLAN' ? (
                   <div className="grid grid-cols-2 gap-6 mb-6">
                     {(Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>).map(gKey => {
                       const group = LESSON_HQ_GROUPS[gKey];
                       const checkedCount = group.codes.filter(c => hqChecks[c]).length;
-                      const isGroupPassed = checkedCount >= 3;
                       return (
-                        <div key={gKey} className={`p-4 rounded-2xl border-2 transition-all ${isGroupPassed ? 'border-green-100 bg-green-50/20' : 'border-slate-100 bg-slate-50/50'}`}>
+                        <div key={gKey} className={`p-4 rounded-2xl border-2 transition-all ${checkedCount >= 3 ? 'border-green-100 bg-green-50/20' : 'border-slate-100 bg-slate-50/50'}`}>
                           <div className="flex justify-between items-center mb-3">
                             <span className="text-sm font-bold text-slate-800">{group.title}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isGroupPassed ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                              {checkedCount} / 5
-                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${checkedCount >= 3 ? 'bg-green-500 text-white' : 'bg-slate-200'}`}>{checkedCount} / 5</span>
                           </div>
                           <div className="flex flex-col gap-2">
                             {group.codes.map((code, idx) => {
                               const isMust = ["A2", "A5", "E1", "E5"].includes(code);
                               return (
-                                <label key={code} className="flex items-start gap-3 p-2 rounded-lg hover:bg-white cursor-pointer transition-colors group">
-                                  <input 
-                                    type="checkbox" 
-                                    checked={hqChecks[code] || false} 
-                                    onChange={() => setHqChecks(prev => ({...prev, [code]: !prev[code]}))} 
-                                    className={`mt-0.5 w-4 h-4 rounded ${isMust ? 'text-blue-600 ring-2 ring-blue-500/20' : 'text-slate-600'}`} 
-                                  />
+                                <label key={code} className="flex items-start gap-3 p-2 rounded-lg hover:bg-white cursor-pointer group">
+                                  <input type="checkbox" checked={hqChecks[code] || false} onChange={() => setHqChecks(prev => ({...prev, [code]: !prev[code]}))} className={`mt-0.5 w-4 h-4 rounded ${isMust ? 'text-blue-600 ring-2 ring-blue-500/20' : ''}`} />
                                   <div className="flex flex-col">
-                                    <span className={`text-[11px] leading-tight ${hqChecks[code] ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
-                                      {group.items[idx]}
-                                    </span>
-                                    {isMust && <span className="text-[9px] text-blue-500 font-bold mt-0.5">※ 硬門檻必勾</span>}
+                                    <span className={`text-[11px] leading-tight ${hqChecks[code] ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>{group.items[idx]}</span>
+                                    {isMust && <span className="text-[9px] text-blue-500 font-bold">※ 必勾</span>}
                                   </div>
                                 </label>
                               );
@@ -626,34 +479,24 @@ export default function App() {
                 ) : (
                   <div className="grid grid-cols-2 gap-2 mb-6">
                     {['R01','R02','R03','R04','R05','R06','R07','R08'].map((code) => (
-                      <label key={code} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
-                        <input type="checkbox" checked={hqChecks[code] || false} onChange={() => setHqChecks(prev => ({...prev, [code]: !prev[code]}))} className="w-5 h-5 rounded text-blue-600" />
+                      <label key={code} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={hqChecks[code] || false} onChange={() => setHqChecks(prev => ({...prev, [code]: !prev[code]}))} className="w-5 h-5 rounded" />
                         <span className="text-xs font-bold text-slate-700">{code} 標準</span>
                       </label>
                     ))}
                   </div>
                 )}
               </div>
-
               <div className="pt-6 border-t flex flex-col gap-4">
                 {creatorTool === 'LESSON_PLAN' && (
                    <div className="flex gap-4">
-                      <div className={`flex-1 p-2 rounded-lg text-center text-[10px] font-bold ${["A2", "A5", "E1", "E5"].every(c => hqChecks[c]) ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                        {["A2", "A5", "E1", "E5"].every(c => hqChecks[c]) ? '✅ 硬門檻已過' : '❌ 缺硬門檻 (A2/A5/E1/E5)'}
-                      </div>
-                      <div className={`flex-1 p-2 rounded-lg text-center text-[10px] font-bold ${(Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>).every(g => LESSON_HQ_GROUPS[g].codes.filter(c => hqChecks[c]).length >= 3) ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                        {(Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>).every(g => LESSON_HQ_GROUPS[g].codes.filter(c => hqChecks[c]).length >= 3) ? '✅ 各組門檻已過' : '❌ 部分組別不足 3 項'}
-                      </div>
+                      <div className={`flex-1 p-2 rounded-lg text-center text-[10px] font-bold ${["A2", "A5", "E1", "E5"].every(c => hqChecks[c]) ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>{["A2", "A5", "E1", "E5"].every(c => hqChecks[c]) ? '✅ 硬門檻已過' : '❌ 缺硬門檻'}</div>
+                      <div className={`flex-1 p-2 rounded-lg text-center text-[10px] font-bold ${(Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>).every(g => LESSON_HQ_GROUPS[g].codes.filter(c => hqChecks[c]).length >= 3) ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>{(Object.keys(LESSON_HQ_GROUPS) as Array<keyof typeof LESSON_HQ_GROUPS>).every(g => LESSON_HQ_GROUPS[g].codes.filter(c => hqChecks[c]).length >= 3) ? '✅ 各組門檻已過' : '❌ 分組不足 3 項'}</div>
                    </div>
                 )}
                 <div className="flex gap-3">
-                  <button onClick={() => setShowHqModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold text-sm text-slate-600">取消</button>
-                  <button 
-                    disabled={!(creatorTool === 'LESSON_PLAN' ? isLessonHqPassed : isKnowledgeCardHqPassed) || isSavingToSheet}
-                    onClick={finalizeHqReview} 
-                    className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold text-sm disabled:opacity-30 shadow-lg shadow-green-500/20 active:scale-95 transition-all">
-                    {isSavingToSheet ? '寫入中...' : '核准發布並存檔'}
-                  </button>
+                  <button onClick={() => setShowHqModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">取消</button>
+                  <button disabled={!(creatorTool === 'LESSON_PLAN' ? isLessonHqPassed : isKnowledgeCardHqPassed) || isSavingToSheet} onClick={finalizeHqReview} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg disabled:opacity-30">發布並存檔</button>
                 </div>
               </div>
             </div>

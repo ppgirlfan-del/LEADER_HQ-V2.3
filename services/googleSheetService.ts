@@ -10,7 +10,7 @@ const getAppsScriptUrl = () => {
   if (envUrl) return envUrl;
   
   if (typeof window !== 'undefined') {
-    return window.sessionStorage.getItem('OVERRIDE_APPS_SCRIPT_URL') || "";
+    return window.sessionStorage.getItem('OVER_APPS_SCRIPT_URL') || "";
   }
   return "";
 };
@@ -31,7 +31,7 @@ export async function appendCard(data: {
 }) {
   const url = getAppsScriptUrl();
   if (!url) {
-    console.error("APPS_SCRIPT_URL is missing.");
+    console.error("[googleSheetService] APPS_SCRIPT_URL is missing.");
     return { result: "no_url" };
   }
 
@@ -41,7 +41,7 @@ export async function appendCard(data: {
 
     const payload = {
       action: "append",
-      tab: data.tab || "主題知識卡",
+      tab: data.tab || "主題知識卡", // 重要：這裡決定寫入哪一個分頁（工作表）
       id: data.id,
       topic_name: data.topic_name,
       brand: data.brand,
@@ -55,7 +55,9 @@ export async function appendCard(data: {
       approved_at: data.approved_at || new Date().toISOString()
     };
 
-    // 使用 text/plain 繞過 CORS preflight
+    console.log(`[googleSheetService] 準備寫入 ${payload.tab}，ID: ${payload.id}`, payload);
+
+    // 使用 text/plain 繞過 CORS preflight，這是 Apps Script 常用的接收方式
     await fetch(url, {
       method: "POST",
       mode: 'no-cors',
@@ -63,6 +65,7 @@ export async function appendCard(data: {
       body: JSON.stringify(payload),
     });
     
+    // 由於 no-cors 無法獲取回應內容，我們假設發送成功（若無拋出 Error）
     return { result: "success", status: "success" };
   } catch (e) {
     console.error("[googleSheetService] Append Error:", e);
@@ -105,7 +108,7 @@ export async function queryCards(params: {
       topic_name: r[1] || "",
       brand: r[2] || "",
       domain: r[3] || "",
-      status: "已審定",
+      status: r[8] || "草稿", // 通常 status 在第 9 欄 (Index 8)
       content: r[4] || "", 
       summary: r[5] || "",
       keywords: (r[6] || "").split(',').map(k => k.trim()).filter(k => k),
@@ -132,13 +135,4 @@ export async function queryCards(params: {
     console.error("[googleSheetService] Query Error:", error);
     return { results: [], total_count: 0, evidence: { sheet_id: "error", tab_name: source, range: "none", rows_returned: 0, query_used: "error", timestamp } };
   }
-}
-
-export async function fetchKnowledgeCards(params: { brand: string, domain: string, tab?: string }): Promise<any[]> {
-  const res = await queryCards({
-    source: params.tab || "主題知識卡",
-    brand: params.brand,
-    domain: params.domain
-  });
-  return res.results;
 }

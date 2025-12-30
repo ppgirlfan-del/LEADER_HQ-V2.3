@@ -1,5 +1,5 @@
 {
-  "name": "leader-hq_2.3教案模板可生成",
+  "name": "leader-hq_2.3",
   "description": "LEADER 集團總部專用知識管理與生成工具，協助整理主題知識卡、教案模板、課後回饋與技巧小卡。",
   "requestFramePermissions": [
     "microphone"
