@@ -15,7 +15,10 @@ const getAppsScriptUrl = () => {
   return "";
 };
 
-// Fix: Make fields optional to match FinderResult and avoid type mismatch in App.tsx
+/**
+ * 寫入資料至 Google Sheets
+ * 針對 Google Apps Script 使用 mode: 'no-cors' 模式以避開 CORS 限制
+ */
 export async function appendCard(data: {
   id: string;
   topic_name: string;
@@ -37,7 +40,6 @@ export async function appendCard(data: {
   }
 
   try {
-    // 確保關鍵字為字串格式
     const keywordsStr = Array.isArray(data.keywords) ? data.keywords.join(', ') : (data.keywords || "");
 
     const payload = {
@@ -59,33 +61,29 @@ export async function appendCard(data: {
     console.log(`[googleSheetService] 正在寫入 [${payload.tab}] 分頁，ID: ${payload.id}`);
 
     /**
-     * 注意：我們使用 text/plain 發送 JSON。
-     * 這在 Apps Script 中被視為 Simple Request，不需要 OPTIONS 預檢。
-     * Apps Script 端應使用 JSON.parse(e.postData.contents) 來解析。
+     * 【重要修正】
+     * 由於 Google Apps Script 不支援 CORS 預檢 (OPTIONS)，
+     * 使用 mode: 'no-cors' 是在瀏覽器環境下確保 POST 請求能送達伺服器的最穩定作法。
+     * 雖然此模式無法讀取回應 body，但對於「寫入」操作來說，只要網路未斷，請求就會執行。
      */
-    const response = await fetch(url, {
+    await fetch(url, {
       method: "POST",
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      mode: 'no-cors', 
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8', 
+      },
       body: JSON.stringify(payload),
-      // 移除 no-cors，以便我們能捕捉到諸如 401, 404 或 500 的錯誤
-      mode: 'cors', 
-      redirect: 'follow'
     });
 
-    if (response.ok || response.type === 'opaque') {
-      // 由於 Apps Script 可能會重導向導致 type 變為 opaque，我們視其為成功
-      return { result: "success", status: "success" };
-    } else {
-      const errorText = await response.text().catch(() => "Unknown error");
-      throw new Error(`伺服器回應錯誤 (${response.status}): ${errorText}`);
-    }
+    // 在 no-cors 模式下，fetch 不會拋出網路錯誤即代表請求已成功發出
+    return { result: "success" };
+    
   } catch (e) {
     console.error("[googleSheetService] Append Error:", e);
-    // 如果是因為 CORS 失敗，提示使用者檢查 Apps Script 的佈署設定是否為「任何人」
-    const msg = String(e).includes('Failed to fetch') 
-      ? "連線失敗：請確認 Apps Script 已佈署為「任何人 (Anyone)」，或網址正確。"
-      : String(e);
-    return { result: "error", message: msg };
+    return { 
+      result: "error", 
+      message: `連線失敗：${e instanceof Error ? e.message : '請檢查網路連線或 Apps Script 網址是否正確。'}`
+    };
   }
 }
 
