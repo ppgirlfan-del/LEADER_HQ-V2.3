@@ -122,7 +122,6 @@ export default function App() {
     setIsLoading(true);
     try {
       const resp = await queryCards({
-        // 修正：統一搜尋目標分頁名稱為「教案模板」
         source: (creatorTool === 'LESSON_PLAN' || activeTab === 'creator') ? '教案模板' : '主題知識卡',
         brand: selectedBrand, domain: selectedDomain, input: searchQuery
       });
@@ -213,7 +212,6 @@ export default function App() {
     
     setIsSavingToSheet(true);
     try {
-      // 修正：寫入目標分頁名稱統一改為「教案模板」
       const tabName = creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡';
       const result = await appendCard({
         ...card, 
@@ -285,7 +283,7 @@ export default function App() {
                 <button disabled={selectedCard.status === '已審定'} onClick={() => { setHqCardId(selectedCard.id); setShowHqModal(true); }} className="px-4 py-2 border rounded-xl text-sm font-bold hover:bg-slate-50">🛡️ 總部審核</button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed whitespace-pre-wrap text-slate-900">
+            <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed whitespace-pre-wrap text-slate-900 break-words">
               {selectedCard.content}
               {selectedCard.meta_json && (
                 <div className="mt-10 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
@@ -380,7 +378,7 @@ export default function App() {
                              <button onClick={() => { setHqCardId(''); setShowHqModal(true); }} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold shadow-lg hover:bg-green-700 transition-all">🛡️ 總部審核儲存</button>
                           </div>
                         </div>
-                        <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed">
+                        <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed break-words">
                            {isEditingGenerated ? (
                              <div className="flex flex-col gap-6">
                                <div className="grid grid-cols-1 gap-4">
@@ -425,7 +423,7 @@ export default function App() {
                                  </div>
                                )}
 
-                               <div className="whitespace-pre-wrap">{currentCardForOutput.content}</div>
+                               <div className="whitespace-pre-wrap leading-relaxed">{currentCardForOutput.content}</div>
                                {currentCardForOutput.meta_json && (<div className="mt-10 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200"><div className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-1">Meta JSON</div><div className="font-mono text-[11px] text-slate-500 break-all leading-normal">{currentCardForOutput.meta_json}</div></div>)}
                              </>
                            )}

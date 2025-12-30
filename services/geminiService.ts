@@ -47,6 +47,8 @@ export async function getTopicDraft(params: TopicDraftParams): Promise<Generatio
 ${rawText}
 
 🧱 格式要求（13 段小標全保留，使用 Markdown ####）
+每段標題與內容之間、以及不同段落之間，必須使用「雙換行符號」分隔，確保排版清晰。
+
 一、主題基本資訊
 二、主題摘要
 三、教學 / 操作目標（內部版）
@@ -65,12 +67,12 @@ ${rawText}
 {"brand":"${brand}","domain":"${domain}","tab":"主題知識卡","topic_name":"【${topicName}】","status":"draft"}
 
 【輸出要求】
-回傳 JSON：content, summary (30-40字), keywords (3-5個), meta_json (String, 單行)。
+回傳 JSON：content (包含清晰換行與 Markdown 標題), summary (30-40字), keywords (3-5個), meta_json (String, 單行)。
 `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview", // 改用 flash 提升穩定性與速度
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -103,9 +105,6 @@ export async function generateLessonPlan(params: TopicDraftParams): Promise<Gene
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const brandCode = brand.toLowerCase().includes('yys') ? 'yys' : 'leader';
-  const domainCode = domain.toLowerCase().split(' ')[0] || 'swimming';
-
   const prompt = `
 你現在在 LEADER HQ 總部知識庫助理（v2）裡面。
 任務：將主題知識卡【${topicName}】轉換為教案模板（含 60 分鐘與 90 分鐘版）。
@@ -116,31 +115,31 @@ ${rawText}
 ---
 
 ### A) 教案輸出模板（固定骨架）
-請產出同一份內容，內含 60 分鐘與 90 分鐘兩份教案。每份教案必須嚴格遵守以下九段標題編號：
+請產出同一份內容，內含 60 分鐘與 90 分鐘兩份教案。
+重要：每個標題（####）前必須有雙換行，內容段落之間也必須有換行。禁止所有文字黏在一起。
 
 #### 一、主題基本資訊
 #### 二、課程摘要
 #### 三、教學目標（可檢核）
 #### 四、課程流程（時間切分）
-#### 五、教練口令與引導語（現場可直接念）
+#### 五、教練口令與引導語
 #### 六、常見錯誤與矯正
-#### 七、課後作業（回家功課）
+#### 七、課後作業
 #### 八、本堂課完成判準（5 勾）
-* 必須包含 5 個 - [ ] 格式。
 #### 九、圖像與媒體素材
 
 ---
 
 ### B) lesson_meta_json 硬規格（單行 JSON）
-必須包含以下 10 個 key： brand, domain, tab, topic_id, topic_name, lesson_version, lesson_type, status, media_ids, keyword_policy。
+必須包含正確的 meta 資料。
 
 【輸出要求】
-請回傳 JSON：content (包含 60 與 90 分鐘兩套完整的九段教案), summary, keywords (Array), meta_json (單行 JSON 字串)。
+請回傳 JSON：content (字串格式，請確保章節標題使用 #### 並有明顯換行分隔), summary, keywords (Array), meta_json (單行 JSON 字串)。
 `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview", // 改用 flash 提升穩定性
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
