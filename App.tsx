@@ -167,7 +167,10 @@ export default function App() {
         meta_json: res.meta_json, status: '草稿'
       };
       setLocalCards(prev => [newCard, ...prev]);
-    } catch (e) { alert('產生失敗。'); } finally { setIsLoading(false); }
+    } catch (e: any) { 
+      console.error(e);
+      alert(`🤖 生成失敗：\n${e?.message || 'Gemini API 暫時無法回應，請檢查 API Key 權限或稍後再試。'}`); 
+    } finally { setIsLoading(false); }
   };
 
   const handleAudit = async () => {
@@ -206,20 +209,30 @@ export default function App() {
     const cardId = hqCardId || currentId;
     const card = localCards.find(c => c.id === cardId);
     if (!card) { alert('找不到對應資料'); return; }
+    
     setIsSavingToSheet(true);
     try {
       const tabName = creatorTool === 'LESSON_PLAN' ? '教案' : '主題知識卡';
       const result = await appendCard({
-        ...card, tab: tabName, status: '已審定',
-        approved_by: "HQ-ASSISTANT-V2", approved_at: new Date().toISOString()
+        ...card, 
+        tab: tabName, 
+        status: '已審定',
+        approved_by: "HQ-ASSISTANT-V2", 
+        approved_at: new Date().toISOString()
       });
+
       if (result.result === "success") {
         updateLocalCard(card.id, { status: '已審定' });
-        alert(`✅ ${tabName} 審定完成！資料已同步。`);
-      } else { throw new Error("發送失敗"); }
-    } catch (e) { alert('❌ 儲存錯誤'); } finally {
+        alert(`✅ ${tabName} 審定完成並成功寫入雲端資料庫！`);
+        setShowHqModal(false);
+      } else {
+        throw new Error(result.message || "發送失敗，雲端資料庫未回應。");
+      }
+    } catch (e) { 
+      console.error(e);
+      alert(`❌ 寫入失敗\n原因：${e instanceof Error ? e.message : '連線異常，請確認雲端網址與網路狀態。'}`); 
+    } finally {
       setIsSavingToSheet(false);
-      setShowHqModal(false);
     }
   };
 
@@ -383,7 +396,7 @@ export default function App() {
                                   {currentCardForOutput.keywords && currentCardForOutput.keywords.length > 0 && (<div className="flex flex-wrap gap-2">{currentCardForOutput.keywords.map(k => (<span key={k} className="px-3 py-1 bg-slate-900 text-white rounded-full text-[10px] font-bold shadow-sm">#{k}</span>))}</div>)}
                                </div>
                                
-                               {/* 恢復 AI 自審報告完整顯示 */}
+                               {/* AI 自審報告完整顯示 */}
                                {auditResults.length > 0 && (
                                  <div className="mb-8 p-5 bg-blue-50/50 rounded-2xl border border-blue-100 shadow-sm">
                                    <div className="text-[10px] font-bold text-blue-600 uppercase mb-4 tracking-widest flex justify-between items-center px-1">
@@ -496,7 +509,9 @@ export default function App() {
                 )}
                 <div className="flex gap-3">
                   <button onClick={() => setShowHqModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">取消</button>
-                  <button disabled={!(creatorTool === 'LESSON_PLAN' ? isLessonHqPassed : isKnowledgeCardHqPassed) || isSavingToSheet} onClick={finalizeHqReview} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg disabled:opacity-30">發布並存檔</button>
+                  <button disabled={!(creatorTool === 'LESSON_PLAN' ? isLessonHqPassed : isKnowledgeCardHqPassed) || isSavingToSheet} onClick={finalizeHqReview} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg disabled:opacity-30">
+                    {isSavingToSheet ? '寫入中...' : '核准發布並存檔'}
+                  </button>
                 </div>
               </div>
             </div>

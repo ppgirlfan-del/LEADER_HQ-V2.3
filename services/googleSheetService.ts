@@ -15,15 +15,16 @@ const getAppsScriptUrl = () => {
   return "";
 };
 
+// Fix: Make fields optional to match FinderResult and avoid type mismatch in App.tsx
 export async function appendCard(data: {
   id: string;
   topic_name: string;
   brand: string;
   domain: string;
-  content: string;
-  summary: string;
-  keywords: string | string[];
-  meta_json: string;
+  content?: string;
+  summary?: string;
+  keywords?: string | string[];
+  meta_json?: string;
   status: string;
   tab?: string;
   approved_by?: string;
@@ -32,7 +33,7 @@ export async function appendCard(data: {
   const url = getAppsScriptUrl();
   if (!url) {
     console.error("[googleSheetService] APPS_SCRIPT_URL is missing.");
-    return { result: "no_url" };
+    return { result: "error", message: "未設定總部 Apps Script 連線網址" };
   }
 
   try {
@@ -41,35 +42,50 @@ export async function appendCard(data: {
 
     const payload = {
       action: "append",
-      tab: data.tab || "主題知識卡", // 重要：這裡決定寫入哪一個分頁（工作表）
+      tab: data.tab || "主題知識卡", 
       id: data.id,
       topic_name: data.topic_name,
       brand: data.brand,
       domain: data.domain,
-      content: data.content,
-      summary: data.summary,
+      content: data.content || "",
+      summary: data.summary || "",
       keywords: keywordsStr,
-      meta_json: data.meta_json,
+      meta_json: data.meta_json || "",
       status: data.status,
       approved_by: data.approved_by || "HQ",
       approved_at: data.approved_at || new Date().toISOString()
     };
 
-    console.log(`[googleSheetService] 準備寫入 ${payload.tab}，ID: ${payload.id}`, payload);
+    console.log(`[googleSheetService] 正在寫入 [${payload.tab}] 分頁，ID: ${payload.id}`);
 
-    // 使用 text/plain 繞過 CORS preflight，這是 Apps Script 常用的接收方式
-    await fetch(url, {
+    /**
+     * 注意：我們使用 text/plain 發送 JSON。
+     * 這在 Apps Script 中被視為 Simple Request，不需要 OPTIONS 預檢。
+     * Apps Script 端應使用 JSON.parse(e.postData.contents) 來解析。
+     */
+    const response = await fetch(url, {
       method: "POST",
-      mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
+      // 移除 no-cors，以便我們能捕捉到諸如 401, 404 或 500 的錯誤
+      mode: 'cors', 
+      redirect: 'follow'
     });
-    
-    // 由於 no-cors 無法獲取回應內容，我們假設發送成功（若無拋出 Error）
-    return { result: "success", status: "success" };
+
+    if (response.ok || response.type === 'opaque') {
+      // 由於 Apps Script 可能會重導向導致 type 變為 opaque，我們視其為成功
+      return { result: "success", status: "success" };
+    } else {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(`伺服器回應錯誤 (${response.status}): ${errorText}`);
+    }
   } catch (e) {
     console.error("[googleSheetService] Append Error:", e);
-    return { result: "error", message: String(e) };
+    // 如果是因為 CORS 失敗，提示使用者檢查 Apps Script 的佈署設定是否為「任何人」
+    const msg = String(e).includes('Failed to fetch') 
+      ? "連線失敗：請確認 Apps Script 已佈署為「任何人 (Anyone)」，或網址正確。"
+      : String(e);
+    return { result: "error", message: msg };
   }
 }
 
@@ -108,7 +124,7 @@ export async function queryCards(params: {
       topic_name: r[1] || "",
       brand: r[2] || "",
       domain: r[3] || "",
-      status: r[8] || "草稿", // 通常 status 在第 9 欄 (Index 8)
+      status: r[8] || "草稿",
       content: r[4] || "", 
       summary: r[5] || "",
       keywords: (r[6] || "").split(',').map(k => k.trim()).filter(k => k),
