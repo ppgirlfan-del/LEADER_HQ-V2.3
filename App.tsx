@@ -122,7 +122,8 @@ export default function App() {
     setIsLoading(true);
     try {
       const resp = await queryCards({
-        source: (creatorTool === 'LESSON_PLAN' || activeTab === 'creator') ? '教案' : '主題知識卡',
+        // 修正：統一搜尋目標分頁名稱為「教案模板」
+        source: (creatorTool === 'LESSON_PLAN' || activeTab === 'creator') ? '教案模板' : '主題知識卡',
         brand: selectedBrand, domain: selectedDomain, input: searchQuery
       });
       setSheetResults(resp.results);
@@ -212,7 +213,8 @@ export default function App() {
     
     setIsSavingToSheet(true);
     try {
-      const tabName = creatorTool === 'LESSON_PLAN' ? '教案' : '主題知識卡';
+      // 修正：寫入目標分頁名稱統一改為「教案模板」
+      const tabName = creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡';
       const result = await appendCard({
         ...card, 
         tab: tabName, 

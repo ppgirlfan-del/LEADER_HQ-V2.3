@@ -44,7 +44,8 @@ export async function appendCard(data: {
 
     const payload = {
       action: "append",
-      tab: data.tab || "主題知識卡", 
+      // 修正：預設分頁名稱邏輯，優先使用傳入值，若為教案則導向「教案模板」
+      tab: data.tab === "教案" ? "教案模板" : (data.tab || "主題知識卡"), 
       id: data.id,
       topic_name: data.topic_name,
       brand: data.brand,
@@ -61,10 +62,9 @@ export async function appendCard(data: {
     console.log(`[googleSheetService] 正在寫入 [${payload.tab}] 分頁，ID: ${payload.id}`);
 
     /**
-     * 【重要修正】
-     * 由於 Google Apps Script 不支援 CORS 預檢 (OPTIONS)，
-     * 使用 mode: 'no-cors' 是在瀏覽器環境下確保 POST 請求能送達伺服器的最穩定作法。
-     * 雖然此模式無法讀取回應 body，但對於「寫入」操作來說，只要網路未斷，請求就會執行。
+     * 【穩定性要求】
+     * 使用 mode: 'no-cors' 配合 text/plain。
+     * 雖然無法讀取 body，但能確保 POST 本體能穿透 CORS 限制到達 Apps Script。
      */
     await fetch(url, {
       method: "POST",
@@ -75,7 +75,6 @@ export async function appendCard(data: {
       body: JSON.stringify(payload),
     });
 
-    // 在 no-cors 模式下，fetch 不會拋出網路錯誤即代表請求已成功發出
     return { result: "success" };
     
   } catch (e) {
@@ -105,7 +104,8 @@ export async function queryCards(params: {
   try {
     const queryParams = new URLSearchParams({
       action: "query",
-      tab: source,
+      // 修正：查詢時也確保教案指向「教案模板」
+      tab: source === "教案" ? "教案模板" : source,
       brand: brand,
       domain: domain,
       input: input
