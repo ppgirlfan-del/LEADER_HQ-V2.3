@@ -30,16 +30,22 @@ export default function App() {
 
   useEffect(() => {
     const checkConfig = () => {
-      const hasSession = !!window.sessionStorage.getItem('OVER_APPS_SCRIPT_URL');
-      setIsConfigured(hasSession);
-      if (hasSession && !tempUrlInput) {
-        setTempUrlInput(window.sessionStorage.getItem('OVER_APPS_SCRIPT_URL') || '');
+      // 偵測是否存在 Vercel 環境變數 或 SessionStorage 中的手動設定
+      const envUrl = process.env.APPS_SCRIPT_URL;
+      const sessionUrl = window.sessionStorage.getItem('OVER_APPS_SCRIPT_URL');
+      const hasValidConfig = !!(envUrl || sessionUrl);
+      
+      setIsConfigured(hasValidConfig);
+      
+      // 同步目前的網址到輸入框，方便使用者查看或修改
+      if (hasValidConfig && !tempUrlInput) {
+        setTempUrlInput(sessionUrl || envUrl || '');
       }
     };
     checkConfig();
     const interval = setInterval(checkConfig, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [tempUrlInput]);
 
   const saveConfig = () => {
     if (tempUrlInput.includes('script.google.com')) {
