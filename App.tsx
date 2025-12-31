@@ -170,6 +170,14 @@ export default function App() {
     return `${idealPrefix}-${(lastMatch + 1).toString().padStart(3, '0')}`;
   };
 
+  const handleClear = () => {
+    setTopicNameInput('');
+    setInputText('');
+    setAuditReport('');
+    // 不重置 currentId 以免右側預覽消失，若需連預覽一起清空可解除註釋
+    // setCurrentId(''); 
+  };
+
   const handleGenerate = async () => {
     if (!topicNameInput.trim() || !inputText.trim()) { alert('請填寫完整資訊。'); return; }
     setIsLoading(true);
@@ -379,9 +387,12 @@ export default function App() {
             <div className="flex flex-col gap-6">
               <input type="text" value={topicNameInput} onChange={(e) => setTopicNameInput(e.target.value)} className="p-4 bg-white border border-slate-200 rounded-2xl font-bold shadow-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="主題名稱..." />
               <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="flex-1 p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm resize-none outline-none leading-relaxed focus:ring-2 focus:ring-blue-500" placeholder="貼上原文素材..." />
-              <button onClick={handleGenerate} disabled={isLoading} className="py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl disabled:opacity-50 hover:bg-blue-700 transition-colors">
-                {isLoading ? '🤖 生成中...' : '✨ 開始生成'}
-              </button>
+              <div className="flex gap-4">
+                <button onClick={handleClear} className="px-6 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-colors">🗑️ 清空內容</button>
+                <button onClick={handleGenerate} disabled={isLoading} className="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl disabled:opacity-50 hover:bg-blue-700 transition-colors">
+                  {isLoading ? '🤖 生成中...' : '✨ 開始生成'}
+                </button>
+              </div>
             </div>
             <div className="flex flex-col h-full overflow-hidden">
                 {currentCardForOutput ? (
@@ -389,11 +400,27 @@ export default function App() {
                         <div className="mb-4 flex justify-between items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">生成結果預覽</span>
                           <div className="flex gap-2">
-                             <button onClick={handleToggleEdit} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditingPreview ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                             <button 
+                               onClick={handleToggleEdit} 
+                               disabled={currentCardForOutput.status === '已審定'}
+                               className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditingPreview ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'} disabled:opacity-30 disabled:cursor-not-allowed`}
+                             >
                                {isEditingPreview ? '✅ 完成編輯' : '📝 編輯'}
                              </button>
-                             <button onClick={handleAudit} disabled={isAuditing} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold">{isAuditing ? '⌛ 審核中...' : '📋 AI 自審修正'}</button>
-                             <button onClick={() => { setHqCardId(''); setShowHqModal(true); }} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold">🛡️ 總部審核儲存</button>
+                             <button 
+                               onClick={handleAudit} 
+                               disabled={isAuditing || currentCardForOutput.status === '已審定'} 
+                               className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                             >
+                               {isAuditing ? '⌛ 審核中...' : '📋 AI 自審修正'}
+                             </button>
+                             <button 
+                               onClick={() => { setHqCardId(''); setShowHqModal(true); }} 
+                               disabled={isSavingToSheet || currentCardForOutput.status === '已審定'}
+                               className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                             >
+                               🛡️ 總部審核儲存
+                             </button>
                           </div>
                         </div>
                         <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed break-words relative">
