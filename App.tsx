@@ -311,8 +311,31 @@ export default function App() {
               </div>
               <button onClick={() => setSelectedCard(null)} className="text-slate-400 hover:text-slate-600 text-2xl">✕</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed whitespace-pre-wrap">
-              {selectedCard.content}
+            <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed">
+              {/* Modal 摘要區 */}
+              {selectedCard.summary && (
+                <div className="mb-8 p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
+                  <h4 className="text-xs font-bold text-blue-500 uppercase mb-2 tracking-widest">📋 內容摘要</h4>
+                  <div className="text-slate-700 leading-relaxed italic">{selectedCard.summary}</div>
+                </div>
+              )}
+
+              {/* Modal 正文 */}
+              <div className="whitespace-pre-wrap text-slate-900 mb-8">{selectedCard.content}</div>
+
+              {/* Modal 關鍵字 */}
+              {selectedCard.keywords && selectedCard.keywords.length > 0 && (
+                <div className="pt-6 border-t border-slate-100">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">🏷️ 關鍵字</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCard.keywords.map((k, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-slate-100 text-slate-600 text-[11px] font-medium rounded-full border border-slate-200">#{k}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Meta JSON */}
               {selectedCard.meta_json && (
                 <div className="mt-8 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 font-mono text-[11px] text-slate-500">
                   <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Meta JSON</div>
@@ -475,21 +498,22 @@ export default function App() {
                              </div>
                            ) : (
                              <div className="flex flex-col gap-8">
-                               <div className="whitespace-pre-wrap">{currentCardForOutput.content}</div>
-                               
+                               {/* 預覽區摘要置頂 */}
                                {currentCardForOutput.summary && (
-                                 <div className="pt-6 border-t border-slate-100">
-                                   <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">摘要</h4>
+                                 <div className="p-5 bg-blue-50/50 rounded-2xl border border-blue-100">
+                                   <h4 className="text-[10px] font-bold text-blue-500 uppercase mb-2 tracking-widest">📋 內容摘要</h4>
                                    <div className="text-slate-700 italic">{currentCardForOutput.summary}</div>
                                  </div>
                                )}
 
+                               <div className="whitespace-pre-wrap">{currentCardForOutput.content}</div>
+
                                {currentCardForOutput.keywords && currentCardForOutput.keywords.length > 0 && (
                                  <div className="pt-6 border-t border-slate-100">
-                                   <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">關鍵字</h4>
+                                   <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">🏷️ 關鍵字</h4>
                                    <div className="flex flex-wrap gap-2">
                                      {currentCardForOutput.keywords.map((k, idx) => (
-                                       <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-md">#{k}</span>
+                                       <span key={idx} className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-md">#{k}</span>
                                      ))}
                                    </div>
                                  </div>
