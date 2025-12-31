@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   // 載入環境變數（包含 Vercel 注入的變數）
   // 在 Vercel 中，process.cwd() 通常是專案根目錄
-  const env = loadEnv(mode, process.cwd(), '');
+  // Fix: Use type cast for process to resolve 'cwd' property error in certain TypeScript environments
+  const env = loadEnv(mode, (process as any).cwd(), '');
   
   return {
     plugins: [react()],

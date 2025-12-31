@@ -1,4 +1,3 @@
-
 // services/googleSheetService.ts
 import { FinderResponse, FinderResult } from "../types.ts";
 
@@ -17,10 +16,10 @@ const getAppsScriptUrl = () => {
 
 /**
  * 寫入資料至 Google Sheets
- * 針對 Google Apps Script 使用 mode: 'no-cors' 模式以避開 CORS 限制
+ * 支援後端自動編號（ID 為選填）
  */
 export async function appendCard(data: {
-  id: string;
+  id?: string;
   topic_name: string;
   brand: string;
   domain: string;
@@ -44,9 +43,8 @@ export async function appendCard(data: {
 
     const payload = {
       action: "append",
-      // 修正：預設分頁名稱邏輯，優先使用傳入值，若為教案則導向「教案模板」
       tab: data.tab === "教案" ? "教案模板" : (data.tab || "主題知識卡"), 
-      id: data.id,
+      id: data.id || "", // 傳送空字串讓後端自動產生 ID
       topic_name: data.topic_name,
       brand: data.brand,
       domain: data.domain,
@@ -59,12 +57,8 @@ export async function appendCard(data: {
       approved_at: data.approved_at || new Date().toISOString()
     };
 
-    console.log(`[googleSheetService] 正在寫入 [${payload.tab}] 分頁，ID: ${payload.id}`);
-
     /**
-     * 【穩定性要求】
-     * 使用 mode: 'no-cors' 配合 text/plain。
-     * 雖然無法讀取 body，但能確保 POST 本體能穿透 CORS 限制到達 Apps Script。
+     * 使用 mode: 'no-cors' 配合 text/plain 以避開 CORS。
      */
     await fetch(url, {
       method: "POST",
@@ -104,7 +98,6 @@ export async function queryCards(params: {
   try {
     const queryParams = new URLSearchParams({
       action: "query",
-      // 修正：查詢時也確保教案指向「教案模板」
       tab: source === "教案" ? "教案模板" : source,
       brand: brand,
       domain: domain,
