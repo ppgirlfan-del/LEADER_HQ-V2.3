@@ -78,10 +78,12 @@ export default function App() {
     const brandPrefix = selectedBrand.split('|')[0].trim().toLowerCase();
     const domainPartZh = selectedDomain.split(' (')[0].trim().toLowerCase();
     const domainPartEn = selectedDomain.match(/\((.*?)\)/)?.[1]?.toLowerCase() || "";
+    // 判斷當前搜尋目標分類
+    const currentTargetSource = activeTab === 'finder' ? finderSource : (creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡');
 
     const matchesFilter = (item: FinderResult) => {
-      const itemBrand = item.brand.toLowerCase();
-      const itemDomain = item.domain.toLowerCase();
+      const itemBrand = (item.brand || "").toLowerCase();
+      const itemDomain = (item.domain || "").toLowerCase();
       
       // 寬鬆匹配品牌與領域 (相容歷史資料：支援中英文混合或純英文)
       const bMatch = !selectedBrand || itemBrand.includes(brandPrefix) || brandPrefix.includes(itemBrand);
@@ -91,10 +93,14 @@ export default function App() {
                     (domainPartEn && domainPartEn.includes(itemDomain));
       
       const sMatch = !searchQuery || 
-        item.topic_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (item.topic_name || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
         (item.id && item.id.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      // 嚴格分類檢核：知識卡 ID 應含 -TOPIC-，教案 ID 應含 -LESSON-
+      const sourceMatch = (currentTargetSource === '主題知識卡' && item.id.toUpperCase().includes('-TOPIC-')) ||
+                          (currentTargetSource === '教案模板' && item.id.toUpperCase().includes('-LESSON-'));
         
-      return bMatch && dMatch && sMatch;
+      return bMatch && dMatch && sMatch && sourceMatch;
     };
 
     const filteredLocal = localCards.filter(matchesFilter);
@@ -102,11 +108,12 @@ export default function App() {
     const filteredCloud = sheetResults.filter(matchesFilter).filter(s => !cloudIds.has(s.id));
     
     return [...filteredLocal, ...filteredCloud];
-  }, [localCards, sheetResults, selectedBrand, selectedDomain, searchQuery]);
+  }, [localCards, sheetResults, selectedBrand, selectedDomain, searchQuery, activeTab, finderSource, creatorTool]);
 
   const handleFinderSearch = async () => {
     if (!isConfigured) return;
     setIsLoading(true);
+    setSheetResults([]); // 在開始新搜尋前清空舊結果，避免顯示錯誤分類的資料
     try {
       // 恢復先前完整搜尋：API 端不傳入 brand/domain，獲取該分類所有資料再由前端 displayResults 過濾
       const resp = await queryCards({
