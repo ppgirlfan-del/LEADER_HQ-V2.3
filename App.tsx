@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-// Fix: Removed non-existent AuditItem from the import list as it is not exported from geminiService.ts
 import { getTopicDraft, generateLessonPlan, performAiAudit, performLessonAudit, GenerationResponse } from './services/geminiService.ts';
 import { queryCards, appendCard } from './services/googleSheetService.ts';
 import { FinderResult, ToolType } from './types.ts';
@@ -132,19 +131,30 @@ export default function App() {
     if (selectedCard?.id === id) { setSelectedCard(prev => prev ? ({ ...prev, ...cardData }) : null); }
   };
 
+  /**
+   * 強化 ID 生成規則：[BRAND]-[TAG]-[NNN]
+   * 類別 TAG：LESSON 或 TOPIC
+   */
   const getNextSerialNumberId = (brand: string, cards: FinderResult[], tool: CreatorTool) => {
     const brandCode = brand.split('|')[0].trim().toUpperCase(); 
     const targetTag = tool === 'LESSON_PLAN' ? 'LESSON' : 'TOPIC';
-    const idealPrefix = `${brandCode}-${targetTag}`;
-    let lastMatch = 0;
+    const idealPrefix = `${brandCode}-${targetTag}-`;
+    
+    let maxNum = 0;
+    // 遍歷所有卡片，尋找匹配前綴且序號最大的
     for (const card of cards) {
-      if (card.id && card.id.toUpperCase().startsWith(idealPrefix)) {
-        const parts = card.id.split('-');
-        const num = parseInt(parts[parts.length - 1], 10);
-        if (!isNaN(num) && num > lastMatch) lastMatch = num;
+      const upperId = card.id ? card.id.toUpperCase() : "";
+      if (upperId.startsWith(idealPrefix)) {
+        const numPart = upperId.replace(idealPrefix, "");
+        const num = parseInt(numPart, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
       }
     }
-    return `${idealPrefix}-${(lastMatch + 1).toString().padStart(3, '0')}`;
+    
+    // 生成下一號，補零至三位
+    return `${idealPrefix}${(maxNum + 1).toString().padStart(3, '0')}`;
   };
 
   const handleGenerate = async () => {
@@ -154,10 +164,12 @@ export default function App() {
     setIsEditingPreview(false);
     try {
       const sourceTab = creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡';
-      const latestResp = await queryCards({ source: sourceTab, brand: selectedBrand, domain: "", input: "" });
-      const allKnownCards = [...latestResp.results, ...localCards];
-      const nextId = getNextSerialNumberId(selectedBrand, allKnownCards, creatorTool);
       
+      // 1. 先抓取最新資料以計算正確 ID
+      const latestResp = await queryCards({ source: sourceTab, brand: selectedBrand, domain: "", input: "" });
+      const nextId = getNextSerialNumberId(selectedBrand, [...latestResp.results, ...localCards], creatorTool);
+      
+      // 2. 呼叫 AI 生成
       let res: GenerationResponse;
       if (creatorTool === 'KNOWLEDGE_CARD') {
         res = await getTopicDraft({ brand: selectedBrand, domain: selectedDomain, topicName: topicNameInput, rawText: inputText });
@@ -165,8 +177,9 @@ export default function App() {
         res = await generateLessonPlan({ brand: selectedBrand, domain: selectedDomain, topicName: topicNameInput, rawText: inputText, topicId: relatedTopicId });
       }
 
+      // 3. 組裝新物件，強制使用前端計算出的 nextId，確保規則統一
       const newCard: FinderResult = {
-        id: res.id || nextId, 
+        id: nextId, 
         topic_name: res.topic_name, 
         brand: selectedBrand, 
         domain: selectedDomain,
@@ -176,9 +189,13 @@ export default function App() {
         meta_json: res.meta_json, 
         status: '草稿'
       };
+      
       setCurrentId(newCard.id);
       setLocalCards(prev => [newCard, ...prev]);
-    } catch (e: any) { alert(`🤖 生成失敗：\n${e?.message || 'Gemini API 無法回應'}`); } finally { setIsLoading(false); }
+    } catch (e: any) { 
+      const errMsg = e.message?.includes('429') ? '🤖 配額暫時用盡，請稍候 30 秒再試。' : '🤖 生成失敗，請確認 API Key。';
+      alert(errMsg); 
+    } finally { setIsLoading(false); }
   };
 
   const handleAudit = async () => {
@@ -190,10 +207,9 @@ export default function App() {
         const genData: GenerationResponse = { ...card, content: card.content || "", summary: card.summary || "", keywords: card.keywords?.join(', ') || "", meta_json: card.meta_json || "", approved_by: "system", approved_at: new Date().toISOString() } as any;
         const res = await performAiAudit(genData);
         setAuditReport(res.report);
-        if (res.corrected_json) updateLocalCard(card.id, { topic_name: res.corrected_json.topic_name, content: res.corrected_json.content, summary: res.corrected_json.summary, keywords: res.corrected_json.keywords.split(',').map(k => k.trim()).filter(k => k), meta_json: res.corrected_json.meta_json });
       } else {
         const res = await performLessonAudit(card.content, card.meta_json || "");
-        setAuditReport(JSON.stringify(res)); // 儲存結構化字串
+        setAuditReport(JSON.stringify(res)); 
       }
     } catch (e) { alert('審核失敗'); } finally { setIsAuditing(false); }
   };
@@ -202,32 +218,51 @@ export default function App() {
     const cardId = hqCardId || currentId;
     const card = localCards.find(c => c.id === cardId);
     if (!card) return;
-    if (isEditingPreview) {
-      updateLocalCard(cardId, { content: editedContent, summary: editedSummary, keywords: editedKeywords.split(',').map(k => k.trim()).filter(k => k), meta_json: editedMetaJson });
-      setIsEditingPreview(false);
+    
+    let approvedInfo = { by: "HQ", at: new Date().toISOString() };
+    if (creatorTool === 'LESSON_PLAN' && auditReport) {
+        try {
+            const data = JSON.parse(auditReport);
+            if (data.result === '✅' && data.approved_fields?.approved_by) {
+                approvedInfo = { by: data.approved_fields.approved_by, at: data.approved_fields.approved_at };
+            }
+        } catch(e) {}
     }
+
     setIsSavingToSheet(true);
     try {
       const tabName = creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡';
-      const result = await appendCard({ ...card, content: isEditingPreview ? editedContent : card.content, tab: tabName, status: '已審定' });
-      if (result.result === "success") { updateLocalCard(card.id, { status: '已審定' }); alert('✅ 審定完成！'); setShowHqModal(false); handleFinderSearch(); } else { throw new Error(result.message); }
+      const result = await appendCard({ 
+        ...card, 
+        content: isEditingPreview ? editedContent : card.content,
+        summary: isEditingPreview ? editedSummary : card.summary,
+        keywords: isEditingPreview ? editedKeywords.split(',').map(k => k.trim()).filter(k => k) : card.keywords,
+        meta_json: isEditingPreview ? editedMetaJson : card.meta_json,
+        tab: tabName, 
+        status: '已審定',
+        approved_by: approvedInfo.by,
+        approved_at: approvedInfo.at
+      });
+      if (result.result === "success") { 
+        updateLocalCard(card.id, { status: '已審定' }); 
+        alert('✅ 審定完成！'); 
+        setShowHqModal(false); 
+        handleFinderSearch(); 
+      } else { throw new Error(result.message); }
     } catch (e) { alert('❌ 寫入失敗'); } finally { setIsSavingToSheet(false); }
   };
 
   const handleShortcutGenerateLesson = (card: FinderResult) => {
-    if (!card.content) return;
     setActiveTab('creator');
     setCreatorTool('LESSON_PLAN');
     setTopicNameInput(card.topic_name);
-    setInputText(card.content);
+    setInputText(card.content || "");
     setRelatedTopicId(card.id); 
     setAuditReport('');
     setIsEditingPreview(false);
     setSelectedCard(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 渲染自審報告組件
   const renderAuditReport = () => {
     if (!auditReport) return null;
 
@@ -242,56 +277,51 @@ export default function App() {
         const activeStyle = styles[data.result as keyof typeof styles] || 'bg-slate-50 border-slate-200 text-slate-800';
 
         return (
-          <div className={`mb-6 p-6 rounded-2xl border-2 shadow-sm ${activeStyle}`}>
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-3">
-                <span className="text-4xl">{data.result}</span>
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">HQ 30s 審核卡 (v1)</div>
-                  <div className="font-bold text-lg">{data.quick_notes}</div>
-                </div>
+          <div className={`mb-8 p-6 rounded-2xl border-2 shadow-sm ${activeStyle}`}>
+            <div className="flex items-center gap-4 mb-6">
+              <span className="text-4xl">{data.result}</span>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest opacity-60">HQ 審核助理 (內部版)</div>
+                <div className="font-bold text-lg">{data.quick_notes}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="space-y-3">
+                <div className="text-[10px] font-bold uppercase opacity-50 tracking-wider">A) 可寫入門檻 (Hard)</div>
+                {data.checklist?.hard_spec?.map((check: any, i: number) => (
+                  <div key={i} className="flex gap-2 text-[11px] leading-snug">
+                    <span>{check.pass ? '✅' : '❌'}</span>
+                    <span className={check.pass ? 'opacity-80' : 'font-bold'}>{check.item}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                <div className="text-[10px] font-bold uppercase opacity-50 tracking-wider">B) 教務可上線 (Content)</div>
+                {data.checklist?.content?.map((check: any, i: number) => (
+                  <div key={i} className="flex gap-2 text-[11px] leading-snug">
+                    <span>{check.pass ? '✅' : '⚠️'}</span>
+                    <span className={check.pass ? 'opacity-80' : 'font-bold'}>{check.item}</span>
+                  </div>
+                ))}
               </div>
             </div>
             
             {data.must_fix && data.must_fix.length > 0 && (
               <div className="mt-4 pt-4 border-t border-current border-opacity-10">
-                <div className="text-[10px] font-bold uppercase mb-2 opacity-60 tracking-wider">⚠️ 必修清單 (Must Fix)</div>
+                <div className="text-[10px] font-bold uppercase mb-2 opacity-60">⚠️ 必修清單 (MUST FIX)</div>
                 <ul className="space-y-1.5">
-                  {data.must_fix.map((item: string, i: number) => (
-                    <li key={i} className="text-xs flex items-start gap-2">
-                      <span className="mt-1 w-1 h-1 rounded-full bg-current opacity-40 shrink-0"></span>
-                      {item}
-                    </li>
-                  ))}
+                  {data.must_fix.map((item: string, i: number) => <li key={i} className="text-xs flex gap-2"><span>•</span>{item}</li>)}
                 </ul>
-              </div>
-            )}
-
-            {data.approved_fields?.approved_by && (
-              <div className="mt-4 pt-3 border-t border-current border-opacity-10 flex justify-between items-center text-[9px] font-mono opacity-40">
-                <span>BY: {data.approved_fields.approved_by}</span>
-                <span>AT: {data.approved_fields.approved_at}</span>
               </div>
             )}
           </div>
         );
       } catch (e) {
-        return (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 whitespace-pre-wrap">
-            <div className="font-bold mb-2 underline">AI 自審報告：</div>
-            {auditReport}
-          </div>
-        );
+        return <div className="mb-6 p-4 bg-blue-50 text-blue-800 rounded-xl text-xs">{auditReport}</div>;
       }
     }
-
-    // 知識卡預設顯示
-    return (
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 whitespace-pre-wrap">
-        <div className="font-bold mb-2 underline">AI 自審報告：</div>
-        {auditReport}
-      </div>
-    );
+    return <div className="mb-6 p-4 bg-blue-50 text-blue-800 rounded-xl text-xs whitespace-pre-wrap"><div className="font-bold mb-2">AI 自審報告：</div>{auditReport}</div>;
   };
 
   return (
@@ -307,7 +337,7 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-8 text-sm leading-relaxed">
-              {selectedCard.summary && <div className="mb-8 p-6 bg-blue-50/50 rounded-2xl border border-blue-100"><h4 className="text-xs font-bold text-blue-500 uppercase mb-2 tracking-widest">📋 內容摘要</h4><div className="text-slate-700 leading-relaxed italic">{selectedCard.summary}</div></div>}
+              {selectedCard.summary && <div className="mb-8 p-6 bg-blue-50/50 rounded-2xl border border-blue-100"><h4 className="text-xs font-bold text-blue-500 uppercase mb-2 tracking-widest">📋 內容摘要</h4><div className="text-slate-700 italic">{selectedCard.summary}</div></div>}
               <div className="whitespace-pre-wrap text-slate-900 mb-8">{selectedCard.content}</div>
               {selectedCard.keywords && selectedCard.keywords.length > 0 && <div className="pt-6 border-t border-slate-100"><h4 className="text-xs font-bold text-slate-400 uppercase mb-3">🏷️ 關鍵字</h4><div className="flex flex-wrap gap-2">{selectedCard.keywords.map((k, idx) => <span key={idx} className="px-3 py-1 bg-slate-100 text-slate-600 text-[11px] font-medium rounded-full border border-slate-200">#{k}</span>)}</div></div>}
               {selectedCard.meta_json && <div className="mt-8 p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 font-mono text-[11px] text-slate-500"><div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Meta JSON</div>{selectedCard.meta_json}</div>}
@@ -327,48 +357,45 @@ export default function App() {
         <div className="mt-auto pt-6 border-t border-slate-800 flex flex-col gap-3">
           <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs outline-none">{BRANDS.map(b => <option key={b}>{b}</option>)}</select>
           <select value={selectedDomain} onChange={(e) => setSelectedDomain(e.target.value)} className="w-full p-2.5 bg-slate-800 text-white border-none rounded-xl text-xs outline-none">{DOMAINS.map(d => <option key={d}>{d}</option>)}</select>
-          <button onClick={() => setShowConfigModal(true)} className={`flex items-center gap-3 w-full p-3 rounded-xl text-[10px] font-bold transition-all ${isConfigured ? 'bg-slate-800 text-green-400 border border-slate-700' : 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'}`}><div className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-green-400' : 'bg-red-400'}`}></div>{isConfigured ? '雲端已連線' : '未連線 (請設定)'}</button>
+          <button onClick={() => setShowConfigModal(true)} className={`flex items-center gap-3 w-full p-3 rounded-xl text-[10px] font-bold transition-all ${isConfigured ? 'bg-slate-800 text-green-400 border border-slate-700' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{isConfigured ? '雲端已連線' : '未連線 (請設定)'}</button>
         </div>
       </aside>
 
       <main className="flex-1 ml-[280px] p-10 overflow-y-auto">
-        <header className="mb-10 flex justify-between items-center"><h1 className="text-3xl font-bold text-slate-900">{activeTab === 'finder' ? '查卡助手' : (creatorTool === 'KNOWLEDGE_CARD' ? '知識卡生成' : '教案生成')}</h1></header>
+        <header className="mb-10"><h1 className="text-3xl font-bold text-slate-900">{activeTab === 'finder' ? '查卡助手' : (creatorTool === 'KNOWLEDGE_CARD' ? '知識卡生成' : '教案生成 (60/90)')}</h1></header>
 
         {activeTab === 'finder' ? (
           <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100">
             <div className="flex flex-col gap-6 mb-8"><div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-fit">{(['主題知識卡', '教案模板'] as FinderSource[]).map((src) => (<button key={src} onClick={() => setFinderSource(src)} className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${finderSource === src ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{src}</button>))}</div><div className="flex gap-4"><input type="text" placeholder={`搜尋 ${finderSource}...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleFinderSearch()} className="flex-1 p-4 bg-slate-100 rounded-2xl text-sm outline-none border-2 border-transparent focus:border-blue-500 transition-all" /><button onClick={handleFinderSearch} className="px-8 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-colors">搜尋</button></div></div>
-            <div className="overflow-hidden rounded-xl border border-slate-50"><table className="w-full text-left text-sm border-collapse"><thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100"><tr><th className="py-4 px-6">ID</th><th className="py-4 px-6">主題名稱</th><th className="py-4 px-6">狀態</th></tr></thead><tbody className="text-slate-900">{displayResults.map(res => (<tr key={res.id} onClick={() => setSelectedCard(res)} className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors group"><td className="py-5 px-6 font-mono text-blue-600 font-bold group-hover:underline">{res.id}</td><td className="py-5 px-6 font-bold text-slate-900">{res.topic_name}</td><td className="py-5 px-6"><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${res.status === '已審定' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{res.status}</span></td></tr>))}{displayResults.length === 0 && !isLoading && (<tr><td colSpan={3} className="py-10 text-center text-slate-400">目前沒有符合品牌/領域的資料</td></tr>)}</tbody></table></div>
+            <div className="overflow-hidden rounded-xl border border-slate-50"><table className="w-full text-left text-sm border-collapse"><thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100"><tr><th className="py-4 px-6">ID</th><th className="py-4 px-6">主題名稱</th><th className="py-4 px-6">狀態</th></tr></thead><tbody className="text-slate-900">{displayResults.map(res => (<tr key={res.id} onClick={() => setSelectedCard(res)} className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors group"><td className="py-5 px-6 font-mono text-blue-600 font-bold group-hover:underline">{res.id}</td><td className="py-5 px-6 font-bold text-slate-900">{res.topic_name}</td><td className="py-5 px-6"><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${res.status === '已審定' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{res.status}</span></td></tr>))}</tbody></table></div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-8 h-[calc(100vh-200px)]">
             <div className="flex flex-col gap-6">
               <div className="flex gap-4 items-center">
                 <input type="text" value={topicNameInput} onChange={(e) => setTopicNameInput(e.target.value)} className="flex-1 p-4 bg-white border border-slate-200 rounded-2xl font-bold shadow-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="主題名稱..." />
-                {relatedTopicId && <div className="px-4 py-2 bg-blue-100 text-blue-700 rounded-xl text-[10px] font-bold border border-blue-200">Ref: {relatedTopicId}</div>}
+                {relatedTopicId && <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-bold">Ref: {relatedTopicId}</div>}
               </div>
-              <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="flex-1 p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm resize-none outline-none leading-relaxed focus:ring-2 focus:ring-blue-500" placeholder={creatorTool === 'LESSON_PLAN' ? "貼上知識卡內容或教案素材..." : "貼上原文素材..."} />
-              <div className="flex gap-4">
-                <button onClick={() => { setTopicNameInput(''); setInputText(''); setRelatedTopicId(''); setAuditReport(''); }} className="px-6 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-colors">🗑️ 清空內容</button>
-                <button onClick={handleGenerate} disabled={isLoading} className="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl disabled:opacity-50 hover:bg-blue-700 transition-colors">{isLoading ? '🤖 生成中...' : '✨ 開始生成'}</button>
-              </div>
+              <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="flex-1 p-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm resize-none outline-none leading-relaxed focus:ring-2 focus:ring-blue-500" placeholder="貼上原文素材..." />
+              <div className="flex gap-4"><button onClick={() => { setTopicNameInput(''); setInputText(''); setAuditReport(''); }} className="px-6 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl">🗑️ 清空</button><button onClick={handleGenerate} disabled={isLoading} className="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl">{isLoading ? '🤖 生成中...' : '✨ 開始生成'}</button></div>
             </div>
             <div className="flex flex-col h-full overflow-hidden">
                 {currentCardForOutput ? (
                     <div className="flex flex-col h-full">
                         <div className="mb-4 flex justify-between items-center"><span className="text-[10px] font-bold text-slate-400 uppercase">生成結果預覽</span><div className="flex gap-2">
                            {creatorTool === 'KNOWLEDGE_CARD' && <button onClick={() => handleShortcutGenerateLesson(currentCardForOutput)} className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition-all flex items-center gap-2 border border-blue-200">📅 生成教案</button>}
-                           <button onClick={() => setIsEditingPreview(!isEditingPreview)} disabled={currentCardForOutput.status === '已審定'} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditingPreview ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'} disabled:opacity-30`}>{isEditingPreview ? '✅ 完成編輯' : '📝 編輯'}</button>
-                           <button onClick={handleAudit} disabled={isAuditing || currentCardForOutput.status === '已審定'} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold disabled:opacity-30">{isAuditing ? '⌛ 審核中...' : '📋 AI 自審修正'}</button>
-                           <button onClick={() => { setHqCardId(''); setShowHqModal(true); }} disabled={isSavingToSheet || currentCardForOutput.status === '已審定'} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold disabled:opacity-30">🛡️ 總部審核儲存</button>
+                           <button onClick={() => setIsEditingPreview(!isEditingPreview)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${isEditingPreview ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>{isEditingPreview ? '✅ 完成' : '📝 編輯'}</button>
+                           <button onClick={handleAudit} disabled={isAuditing} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold">{isAuditing ? '⌛...' : '📋 AI 審核卡'}</button>
+                           <button onClick={() => setShowHqModal(true)} disabled={isSavingToSheet} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold">🛡️ 審核發布</button>
                         </div></div>
                         <div className="flex-1 p-8 rounded-[2rem] bg-white border border-slate-200 shadow-inner overflow-y-auto text-sm text-slate-900 leading-relaxed relative">
                            {renderAuditReport()}
                            {isEditingPreview ? (
                              <div className="flex flex-col gap-6">
-                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">正文內容</label><textarea className="w-full min-h-[400px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none resize-none font-sans leading-relaxed" value={editedContent} onChange={(e) => setEditedContent(e.target.value)} /></div>
-                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">摘要 (Summary)</label><textarea className="w-full min-h-[100px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none resize-none" value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} /></div>
+                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">正文內容</label><textarea className="w-full min-h-[400px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none resize-none font-sans" value={editedContent} onChange={(e) => setEditedContent(e.target.value)} /></div>
+                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">摘要 (Summary)</label><textarea className="w-full min-h-[80px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none resize-none" value={editedSummary} onChange={(e) => setEditedSummary(e.target.value)} /></div>
                                <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">關鍵字 (逗號分隔)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none" value={editedKeywords} onChange={(e) => setEditedKeywords(e.target.value)} /></div>
-                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Meta JSON</label><textarea className="w-full min-h-[80px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none font-mono text-[11px]" value={editedMetaJson} onChange={(e) => setEditedMetaJson(e.target.value)} /></div>
+                               <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Meta JSON</label><textarea className="w-full min-h-[80px] p-4 bg-slate-50 rounded-xl border border-slate-200 outline-none font-mono text-[10px]" value={editedMetaJson} onChange={(e) => setEditedMetaJson(e.target.value)} /></div>
                              </div>
                            ) : (
                              <div className="flex flex-col gap-8">
@@ -392,13 +419,12 @@ export default function App() {
         {showHqModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col max-h-[90vh]">
-              <div className="mb-6"><h3 className="text-xl font-bold">🛡️ 總部最終審核</h3><p className="text-xs text-slate-500 mt-1">請確認內容品質無誤後點擊「核准發布」。</p></div>
-              <div className="flex-1 overflow-y-auto pr-2"><div className="flex flex-col gap-4">
-                <label className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:bg-slate-50 cursor-pointer"><input type="checkbox" className="mt-1 w-5 h-5" /><div className="flex-1 text-sm font-medium">內容格式正確且符合 13 段(知識卡)或 9 段(教案)骨架</div></label>
-                <label className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:bg-slate-50 cursor-pointer"><input type="checkbox" className="mt-1 w-5 h-5" /><div className="flex-1 text-sm font-medium">專業術語使用正確，無事實錯誤</div></label>
-                <label className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:bg-slate-50 cursor-pointer"><input type="checkbox" className="mt-1 w-5 h-5" /><div className="flex-1 text-sm font-medium">符合品牌形象與教育推廣調性</div></label>
-              </div></div>
-              <div className="pt-6 border-t mt-6 flex gap-3"><button onClick={() => setShowHqModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">取消</button><button disabled={isSavingToSheet} onClick={finalizeHqReview} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg disabled:opacity-30">{isSavingToSheet ? '寫入中...' : '核准發布並存檔'}</button></div>
+              <div className="mb-6"><h3 className="text-xl font-bold">🛡️ 總部審核發布</h3><p className="text-xs text-slate-500 mt-1">確認內容符合品牌規範且門檻全過後發布。</p></div>
+              <div className="flex flex-col gap-4 overflow-y-auto pr-2">
+                <label className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:bg-slate-50 cursor-pointer"><input type="checkbox" className="mt-1 w-5 h-5" /><div className="flex-1 text-sm font-medium">確認 hard_spec 六大門檻全數通過</div></label>
+                <label className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-100 hover:bg-slate-50 cursor-pointer"><input type="checkbox" className="mt-1 w-5 h-5" /><div className="flex-1 text-sm font-medium">確認 meta_json 包含 10 個硬規格 Key</div></label>
+              </div>
+              <div className="pt-6 border-t mt-6 flex gap-3"><button onClick={() => setShowHqModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">取消</button><button disabled={isSavingToSheet} onClick={finalizeHqReview} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg">{isSavingToSheet ? '發布中...' : '核准發布'}</button></div>
             </div>
           </div>
         )}
