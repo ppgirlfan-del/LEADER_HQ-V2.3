@@ -1,3 +1,4 @@
+
 // services/googleSheetService.ts
 import { FinderResponse, FinderResult } from "../types.ts";
 
@@ -44,7 +45,7 @@ export async function appendCard(data: {
     const payload = {
       action: "append",
       tab: data.tab === "教案" ? "教案模板" : (data.tab || "主題知識卡"), 
-      id: data.id || "", // 傳送空字串讓後端自動產生 ID
+      id: data.id || "", 
       topic_name: data.topic_name,
       brand: data.brand,
       domain: data.domain,
@@ -101,7 +102,8 @@ export async function queryCards(params: {
       tab: source === "教案" ? "教案模板" : source,
       brand: brand,
       domain: domain,
-      input: input
+      input: input,
+      _t: Date.now().toString() // 加入快取破壞參數 (Cache Buster)
     });
 
     const res = await fetch(`${url}?${queryParams.toString()}`);

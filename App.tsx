@@ -132,26 +132,27 @@ export default function App() {
   };
 
   /**
-   * 強化 ID 生成規則：[BRAND]-[TAG]-[NNN]
-   * 類別 TAG：LESSON 或 TOPIC
+   * 強化 ID 生成規則：廣泛掃描所有已知的卡片 ID
    */
-  const getNextSerialNumberId = (brand: string, cards: FinderResult[], tool: CreatorTool) => {
+  const getNextSerialNumberId = (brand: string, allPossibleCards: FinderResult[], tool: CreatorTool) => {
     const brandCode = brand.split('|')[0].trim().toUpperCase(); 
     const targetTag = tool === 'LESSON_PLAN' ? 'LESSON' : 'TOPIC';
     const idealPrefix = `${brandCode}-${targetTag}-`;
     
     let maxNum = 0;
-    // 遍歷所有卡片，尋找匹配前綴且序號最大的
-    for (const card of cards) {
-      const upperId = card.id ? card.id.toUpperCase() : "";
-      if (upperId.startsWith(idealPrefix)) {
-        const numPart = upperId.replace(idealPrefix, "");
-        const num = parseInt(numPart, 10);
+    // 遍歷所有已知來源（雲端、搜尋結果、本地），尋找最大序號
+    allPossibleCards.forEach(card => {
+      const upperId = (card.id || "").trim().toUpperCase();
+      if (upperId.includes(idealPrefix)) {
+        // 使用最後一個分隔符之後的文字作為序號解析
+        const parts = upperId.split('-');
+        const lastPart = parts[parts.length - 1];
+        const num = parseInt(lastPart, 10);
         if (!isNaN(num) && num > maxNum) {
           maxNum = num;
         }
       }
-    }
+    });
     
     // 生成下一號，補零至三位
     return `${idealPrefix}${(maxNum + 1).toString().padStart(3, '0')}`;
@@ -165,11 +166,17 @@ export default function App() {
     try {
       const sourceTab = creatorTool === 'LESSON_PLAN' ? '教案模板' : '主題知識卡';
       
-      // 1. 先抓取最新資料以計算正確 ID
+      // 1. 先強制抓取雲端最新資料（已在 googleSheetService 加入隨機參數防快取）
       const latestResp = await queryCards({ source: sourceTab, brand: selectedBrand, domain: "", input: "" });
-      const nextId = getNextSerialNumberId(selectedBrand, [...latestResp.results, ...localCards], creatorTool);
       
-      // 2. 呼叫 AI 生成
+      // 2. 結合雲端、當前顯示以及本地緩存的所有 ID，找出絕對最大值
+      const nextId = getNextSerialNumberId(
+        selectedBrand, 
+        [...latestResp.results, ...localCards, ...sheetResults], 
+        creatorTool
+      );
+      
+      // 3. 呼叫 AI 生成
       let res: GenerationResponse;
       if (creatorTool === 'KNOWLEDGE_CARD') {
         res = await getTopicDraft({ brand: selectedBrand, domain: selectedDomain, topicName: topicNameInput, rawText: inputText });
@@ -177,7 +184,7 @@ export default function App() {
         res = await generateLessonPlan({ brand: selectedBrand, domain: selectedDomain, topicName: topicNameInput, rawText: inputText, topicId: relatedTopicId });
       }
 
-      // 3. 組裝新物件，強制使用前端計算出的 nextId，確保規則統一
+      // 4. 組裝新物件
       const newCard: FinderResult = {
         id: nextId, 
         topic_name: res.topic_name, 
